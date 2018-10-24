@@ -1,6 +1,6 @@
 from __future__ import print_function
 import pre_train
-
+import numpy as np
 
 def main():
     print("program running")
