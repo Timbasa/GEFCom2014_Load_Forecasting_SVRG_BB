@@ -8,68 +8,33 @@ import torch.utils.data
 from loader import Loader
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from reshape_data import reshape_data
+from to_supervised import to_surpervised
+from quantile_loss import QuantileLossFunction
+from model import RNN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+PATH = 'rnnmodel.pt'
 
-
-input_layer = 1
-hidden_layer = 100
+quantiles = [0.5, 0.99]
+input_layer = 44
+hidden_layer = input_layer * 4
 number_layer = 2
-output_layer = 1
-quantiles = [0.01, 0.25, 0.5, 0.75, 0.99]
-daysperweek = 7
-hoursperday = 24
+output_layer = len(quantiles)
 
 
-# RNN, many to one, lstm
-class RNN(nn.Module):
-    def __init__(self, input_layer, hidden_layer, number_layer, output_layer):
-        super(RNN, self).__init__()
-        self.hidden_layer = hidden_layer
-        self.num_layer = number_layer
-        self.lstm = nn.LSTM(input_layer, hidden_layer, number_layer, batch_first=True)
-        self.fc = nn.Linear(hidden_layer, output_layer)
-
-    def forward(self, x):
-        h0 = torch.zeros(self.num_layer, x.size(0), self.hidden_layer).to(device)
-        c0 = torch.zeros(self.num_layer, x.size(0), self.hidden_layer).to(device)
-        x = x.float()
-        out, _ = self.lstm(x, (h0, c0))
-        out = self.fc(out[:, -1, :])
-        return out
-
-
-class QuantileLossFunction(nn.Module):
-    def __init__(self, quantiles):
-        super().__init__()
-        self.quantiles = quantiles
-
-    def forward(self, preds, target):
-        assert not target.requires_grad
-        assert preds.size(0) == target.size(0)
-        losses = []
-        preds = preds.double()
-        for i, q in enumerate(quantiles):
-            errors = target - preds
-            losses.append(torch.max((q-1)*errors, q*errors).unsqueeze(1))
-        loss = torch.mean(torch.sum(torch.cat(losses, dim=1), dim=1))
-        return loss
-
-
-def train(model, device, train_loader, optimizer, epoch):
-    model.train()
+def train(model, device, train_loader, test_loader, optimizer, epoch):
+    loss_func = QuantileLossFunction(quantiles).to(device)
     for e in range(1, epoch+1):
         for batch_idx, (data, target) in enumerate(train_loader):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
-            # target = target.float()
-            output = output.reshape(output.shape[0])
+            print(output[0])
+            print(output[1])
+            # output = output.reshape(output.shape[0], 2, 24)
             output = output.to(device)
-            loss_func = QuantileLossFunction(quantiles).to(device)
             loss = loss_func(output, target)
-            # loss_func = nn.MSELoss()
-            # loss = loss_func(output, target)
             loss.backward()
             optimizer.step()
             if batch_idx % 10 == 0:
@@ -77,35 +42,59 @@ def train(model, device, train_loader, optimizer, epoch):
                     e, batch_idx * len(data), len(train_loader.dataset),
                     100. * batch_idx / len(train_loader), loss.item()))
 
+        #validation
+        sum_loss = []
+        for batch_idx, (data, target) in enumerate(test_loader):
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            print(output[0])
+            print(output[1])
+            # output = output.reshape(output.shape[0], 2, 24)
+            loss = loss_func(output, target)
+            sum_loss.append(loss.item())
+        print('Train Epoch: {} , the test Loss is {:.6f}'.format(e, np.mean(sum_loss)))
+
 
 def pre_train():
     print("reading file")
     task1_train = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 1/L1-train.csv', header=None, low_memory=False)
     #the times that have load value start from 35066 to end
-    task1_train_array = task1_train.values[35065:]
-    task1_train_time = task1_train_array[:, 1]
-    task1_train_load = task1_train_array[:, 2]
-    task1_train_station = task1_train_array[:, np.arange(3, 28)]
-
-    task1_train_station = [[float(column) for column in row] for row in task1_train_station]
-
-    for i in range(len(task1_train_load)):
-        task1_train_load[i] = float(task1_train_load[i])
-
-    task1_train_mean = np.mean(task1_train_station, axis=1)
-    x_task1 =[]
-    for x in task1_train_mean:
-        x_task1.append([x, x**2, x**3])
-    x_train = np.asarray(x_task1)
-    x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
-    y_train = task1_train_load
-    #y_train = np.reshape(task1_train_load, (task1_train_load.shape[0], 1))
-
+    reshapeData = reshape_data(task1_train.values[35065:], 0)
+    x_train, y_train = to_surpervised(reshapeData[:-8760])
+    x_test, y_test = to_surpervised(reshapeData[-8760:])
     train_loader = torch.utils.data.DataLoader(Loader(x_train, y_train), batch_size=64, shuffle=True, pin_memory=True)
-
+    test_loader = torch.utils.data.DataLoader(Loader(x_test, y_test), batch_size=64, shuffle=True, pin_memory=True)
     rnnmodel = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
 
-    optimizer = optim.SGD(rnnmodel.parameters(), lr= 0.01, momentum= 0.5)
+    optimizer = optim.SGD(rnnmodel.parameters(), lr= 0.3)
 
-    train(rnnmodel, device, train_loader, optimizer, epoch=10)
+    train(rnnmodel, device, train_loader, test_loader, optimizer, epoch=2)
 
+    torch.save(rnnmodel.state_dict(), PATH)
+
+    print('test offlane mode')
+    # rnn = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
+    # rnn.load_state_dict(torch.load(PATH))
+    # rnn.eval()
+    task1_train = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 1/L1-train.csv', header=None,
+                              low_memory=False)
+    pre_train = reshape_data(task1_train.values[1:], 0)
+    predict = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 2/L2-train.csv', header=None,
+                              low_memory=False)
+    predict = reshape_data(predict.values[1:], 1)
+    per_train = [pre_train[-48:], pre_train[-48:]]
+    for i in range(len(predict)):
+        train_tensor = [torch.tensor(per_train[0][-48:]).view(1, 48, 44), torch.tensor(per_train[1][-48:]).view(1, 48, 44)]
+        new_p50= rnnmodel(train_tensor[0])[-1][0]
+        new_p90 = rnnmodel(train_tensor[1])[-1][1]
+        predict[i][0] = new_p50
+        per_train[0] = np.append(per_train[0], predict[i])
+        per_train[0] = per_train[0].reshape(-1, 44)
+        predict[i][0] = new_p90
+        per_train[1] = np.append(per_train[1], predict[i])
+        per_train[1] = per_train[1].reshape(-1, 44)
+
+    print(per_train)
+
+if __name__ == '__main__':
+    pre_train()

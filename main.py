@@ -3,7 +3,7 @@ import pre_train
 import numpy as np
 
 def main():
-    print("program running")
+    print("pre train is running")
     pre_train.pre_train()
 
 
