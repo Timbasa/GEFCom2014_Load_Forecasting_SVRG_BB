@@ -17,9 +17,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 PATH = 'rnnmodel.pt'
 
 quantiles = [0.5, 0.99]
-input_layer = 44
+input_layer = 20
 hidden_layer = input_layer * 4
-number_layer = 2
+number_layer = 48
 output_layer = len(quantiles)
 
 
@@ -31,7 +31,8 @@ def train(model, device, train_loader, test_loader, optimizer, epoch):
             optimizer.zero_grad()
             output = model(data)
             print(output[0])
-            print(output[1])
+            print(target[0])
+            # print(output[1])
             # output = output.reshape(output.shape[0], 2, 24)
             output = output.to(device)
             loss = loss_func(output, target)
@@ -47,8 +48,8 @@ def train(model, device, train_loader, test_loader, optimizer, epoch):
         for batch_idx, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
             output = model(data)
-            print(output[0])
-            print(output[1])
+            # print(output[0])
+            # print(output[1])
             # output = output.reshape(output.shape[0], 2, 24)
             loss = loss_func(output, target)
             sum_loss.append(loss.item())
@@ -60,15 +61,15 @@ def pre_train():
     task1_train = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 1/L1-train.csv', header=None, low_memory=False)
     #the times that have load value start from 35066 to end
     reshapeData = reshape_data(task1_train.values[35065:], 0)
-    x_train, y_train = to_surpervised(reshapeData[:-8760])
-    x_test, y_test = to_surpervised(reshapeData[-8760:])
+    x_train, y_train = to_surpervised(reshapeData[-8760:-6576])
+    x_test, y_test = to_surpervised(reshapeData[-6576:])
     train_loader = torch.utils.data.DataLoader(Loader(x_train, y_train), batch_size=64, shuffle=True, pin_memory=True)
     test_loader = torch.utils.data.DataLoader(Loader(x_test, y_test), batch_size=64, shuffle=True, pin_memory=True)
     rnnmodel = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
 
-    optimizer = optim.SGD(rnnmodel.parameters(), lr= 0.3)
+    optimizer = optim.SGD(rnnmodel.parameters(), lr= 0.05, momentum=0.5)
 
-    train(rnnmodel, device, train_loader, test_loader, optimizer, epoch=2)
+    train(rnnmodel, device, train_loader, test_loader, optimizer, epoch=40)
 
     torch.save(rnnmodel.state_dict(), PATH)
 
@@ -84,17 +85,18 @@ def pre_train():
     predict = reshape_data(predict.values[1:], 1)
     per_train = [pre_train[-48:], pre_train[-48:]]
     for i in range(len(predict)):
-        train_tensor = [torch.tensor(per_train[0][-48:]).view(1, 48, 44), torch.tensor(per_train[1][-48:]).view(1, 48, 44)]
+        train_tensor = [torch.tensor(per_train[0][-48:]).view(1, 48, input_layer).to(device),
+                        torch.tensor(per_train[1][-48:]).view(1, 48, input_layer).to(device)]
         new_p50= rnnmodel(train_tensor[0])[-1][0]
         new_p90 = rnnmodel(train_tensor[1])[-1][1]
         predict[i][0] = new_p50
         per_train[0] = np.append(per_train[0], predict[i])
-        per_train[0] = per_train[0].reshape(-1, 44)
+        per_train[0] = per_train[0].reshape(-1, input_layer)
         predict[i][0] = new_p90
         per_train[1] = np.append(per_train[1], predict[i])
-        per_train[1] = per_train[1].reshape(-1, 44)
+        per_train[1] = per_train[1].reshape(-1, input_layer)
 
     print(per_train)
-
+#
 if __name__ == '__main__':
     pre_train()

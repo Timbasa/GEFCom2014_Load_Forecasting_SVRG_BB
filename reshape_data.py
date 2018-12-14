@@ -28,12 +28,13 @@ def reshape_data(data, flag):
     for i, w in enumerate(hour):
         dayofhour[i, w-1] = 1
 
-    reshapedData = np.zeros((data.shape[0], 44))
+    reshapedData = np.zeros((data.shape[0], 20))
     for i in range(reshapedData.shape[0]):
         reshapedData[i][0] = data[i][2]
-        reshapedData[i][1:25] = dayofhour[i]
-        reshapedData[i][25:32] = dayofweek[i]
-        reshapedData[i][32:44] = dayofmonth[i]
-
+        # reshapedData[i][1:25] = dayofhour[i]
+        # reshapedData[i][25:32] = dayofweek[i]
+        # reshapedData[i][32:44] = dayofmonth[i]
+        reshapedData[i][1:8] = dayofweek[i]
+        reshapedData[i][8:20] = dayofmonth[i]
 
     return reshapedData
