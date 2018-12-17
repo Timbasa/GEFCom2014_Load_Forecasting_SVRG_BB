@@ -30,8 +30,9 @@ def train(model, device, train_loader, test_loader, optimizer, epoch):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
-            print(output[0])
-            print(target[0])
+            output = output.view(output.shape[0], -1, 2)
+            # print(output[0])
+            # print(target[0])
             # print(output[1])
             # output = output.reshape(output.shape[0], 2, 24)
             output = output.to(device)
@@ -48,9 +49,10 @@ def train(model, device, train_loader, test_loader, optimizer, epoch):
         for batch_idx, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
             output = model(data)
-            # print(output[0])
-            # print(output[1])
-            # output = output.reshape(output.shape[0], 2, 24)
+            output = output.view(output.shape[0], -1, 2)
+            print('Q50: ', output[0, :, 0])
+            print('Q90: ', output[0, :, 1])
+            print(target[0])
             loss = loss_func(output, target)
             sum_loss.append(loss.item())
         print('Train Epoch: {} , the test Loss is {:.6f}'.format(e, np.mean(sum_loss)))
@@ -67,9 +69,9 @@ def pre_train():
     test_loader = torch.utils.data.DataLoader(Loader(x_test, y_test), batch_size=64, shuffle=True, pin_memory=True)
     rnnmodel = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
 
-    optimizer = optim.SGD(rnnmodel.parameters(), lr= 0.05, momentum=0.5)
+    optimizer = optim.SGD(rnnmodel.parameters(), lr= 0.3, momentum=0.2)
 
-    train(rnnmodel, device, train_loader, test_loader, optimizer, epoch=40)
+    train(rnnmodel, device, train_loader, test_loader, optimizer, epoch=200)
 
     torch.save(rnnmodel.state_dict(), PATH)
 
@@ -84,19 +86,25 @@ def pre_train():
                               low_memory=False)
     predict = reshape_data(predict.values[1:], 1)
     per_train = [pre_train[-48:], pre_train[-48:]]
-    for i in range(len(predict)):
+    for i in range(0, len(predict), 24):
         train_tensor = [torch.tensor(per_train[0][-48:]).view(1, 48, input_layer).to(device),
                         torch.tensor(per_train[1][-48:]).view(1, 48, input_layer).to(device)]
-        new_p50= rnnmodel(train_tensor[0])[-1][0]
-        new_p90 = rnnmodel(train_tensor[1])[-1][1]
-        predict[i][0] = new_p50
-        per_train[0] = np.append(per_train[0], predict[i])
-        per_train[0] = per_train[0].reshape(-1, input_layer)
-        predict[i][0] = new_p90
-        per_train[1] = np.append(per_train[1], predict[i])
-        per_train[1] = per_train[1].reshape(-1, input_layer)
+        output_p50 = rnnmodel(train_tensor[0])
+        output_p90 = rnnmodel(train_tensor[1])
+        output_p50 = output_p50.view(-1, 2)
+        output_p90 = output_p90.view(-1, 2)
+        new_p50= output_p50[:, 0]
+        new_p90 = output_p90[:, 1]
+        for j in range(24):
+            predict[i + j][0] = new_p50[j]
+            per_train[0] = np.append(per_train[0], predict[i + j])
+            per_train[0] = per_train[0].reshape(-1, input_layer)
+            predict[i + j][0] = new_p90[j]
+            per_train[1] = np.append(per_train[1], predict[i + j])
+            per_train[1] = per_train[1].reshape(-1, input_layer)
 
-    print(per_train)
+    for i in range(len(per_train[0])):
+        print('p50: ', per_train[0][i][0], 'p90: ', per_train[1][i][0])
 #
 if __name__ == '__main__':
     pre_train()

@@ -1,4 +1,4 @@
-def to_surpervised(train, n_input=48, n_out=1):
+def to_surpervised(train, n_input=48, n_out=24):
     train_x , train_y = list(), list()
     in_start = 0
     for _ in range(len(train)):
