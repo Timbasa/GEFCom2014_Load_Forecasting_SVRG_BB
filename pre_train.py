@@ -12,18 +12,19 @@ from reshape_data import reshape_data
 from to_supervised import to_surpervised
 from quantile_loss import QuantileLossFunction
 from model import RNN
+from test_offlane import test_offlane
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 PATH = 'rnnmodel.pt'
 
-quantiles = [0.5, 0.99]
+quantiles = [0.5, 0.9]
 input_layer = 20
 hidden_layer = input_layer * 4
 number_layer = 48
 output_layer = len(quantiles)
 
 
-def train(model, device, train_loader, test_loader, optimizer, epoch):
+def train(model, train_loader, test_loader, optimizer, epoch):
     loss_func = QuantileLossFunction(quantiles).to(device)
     for e in range(1, epoch+1):
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -69,42 +70,14 @@ def pre_train():
     test_loader = torch.utils.data.DataLoader(Loader(x_test, y_test), batch_size=64, shuffle=True, pin_memory=True)
     rnnmodel = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
 
-    optimizer = optim.SGD(rnnmodel.parameters(), lr= 0.3, momentum=0.2)
+    optimizer = optim.SGD(rnnmodel.parameters(), lr=0.3, momentum=0.2)
 
-    train(rnnmodel, device, train_loader, test_loader, optimizer, epoch=200)
+    train(rnnmodel, train_loader, test_loader, optimizer, epoch=200)
 
     torch.save(rnnmodel.state_dict(), PATH)
 
-    print('test offlane mode')
-    # rnn = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
-    # rnn.load_state_dict(torch.load(PATH))
-    # rnn.eval()
-    task1_train = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 1/L1-train.csv', header=None,
-                              low_memory=False)
-    pre_train = reshape_data(task1_train.values[1:], 0)
-    predict = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 2/L2-train.csv', header=None,
-                              low_memory=False)
-    predict = reshape_data(predict.values[1:], 1)
-    per_train = [pre_train[-48:], pre_train[-48:]]
-    for i in range(0, len(predict), 24):
-        train_tensor = [torch.tensor(per_train[0][-48:]).view(1, 48, input_layer).to(device),
-                        torch.tensor(per_train[1][-48:]).view(1, 48, input_layer).to(device)]
-        output_p50 = rnnmodel(train_tensor[0])
-        output_p90 = rnnmodel(train_tensor[1])
-        output_p50 = output_p50.view(-1, 2)
-        output_p90 = output_p90.view(-1, 2)
-        new_p50= output_p50[:, 0]
-        new_p90 = output_p90[:, 1]
-        for j in range(24):
-            predict[i + j][0] = new_p50[j]
-            per_train[0] = np.append(per_train[0], predict[i + j])
-            per_train[0] = per_train[0].reshape(-1, input_layer)
-            predict[i + j][0] = new_p90[j]
-            per_train[1] = np.append(per_train[1], predict[i + j])
-            per_train[1] = per_train[1].reshape(-1, input_layer)
+    test_offlane(device, input_layer, hidden_layer, number_layer, output_layer)
 
-    for i in range(len(per_train[0])):
-        print('p50: ', per_train[0][i][0], 'p90: ', per_train[1][i][0])
-#
+
 if __name__ == '__main__':
     pre_train()

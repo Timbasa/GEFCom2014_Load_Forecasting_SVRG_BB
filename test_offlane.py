@@ -6,20 +6,9 @@ from model import RNN
 
 
 PATH = 'rnnmodel.pt'
-quantiles = [0.5, 0.99]
-input_layer = 44
-hidden_layer = input_layer * 4
-number_layer = 2
-output_layer = len(quantiles)
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-def prediction(model, data):
-    output = []
-    loss = []
 
 
-def test_offlane():
+def test_offlane(device, input_layer, hidden_layer, number_layer, output_layer):
     print('test offlane mode')
     rnn = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
     rnn.load_state_dict(torch.load(PATH))
@@ -30,19 +19,28 @@ def test_offlane():
     predict = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 2/L2-train.csv', header=None,
                               low_memory=False)
     predict = reshape_data(predict.values[1:], 1)
-    train = [pre_train[-48:], pre_train[-48:]]
-    for i in range(len(predict)):
-        train_tensor = [torch.tensor(train[0][-48:]).view(1, 48, 44), torch.tensor(train[1][-48:]).view(1, 48, 44)]
-        new_p50= rnn(train_tensor[0])[-1][0]
-        new_p90 = rnn(train_tensor[1])[-1][1]
-        predict[i][0] = new_p50
-        train[0] = np.append(train[0], predict[i])
-        train[0] = train[0].reshape(-1, 44)
-        predict[i][0] = new_p90
-        train[1] = np.append(train[1], predict[i])
-        train[1] = train[1].reshape(-1, 44)
+    train = [pre_train[-number_layer:], pre_train[-number_layer:]]
+    for i in range(0, len(predict), 24):
+        train_tensor = [torch.tensor(train[0][-number_layer:]).view(1, number_layer, input_layer),
+                        torch.tensor(train[1][-number_layer:]).view(1, number_layer, input_layer)]
+        output_p50 = rnn(train_tensor[0])
+        output_p90 = rnn(train_tensor[1])
+        output_p50 = output_p50.view(-1, 2)
+        output_p90 = output_p90.view(-1, 2)
+        new_p50= output_p50[:, 0]
+        new_p90 = output_p90[:, 1]
+        for j in range(24):
+            predict[i + j][0] = new_p50[j]
+            train[0] = np.append(train[0], predict[i + j])
+            train[0] = train[0].reshape(-1, input_layer)
+            predict[i + j][0] = new_p90[j]
+            train[1] = np.append(train[1], predict[i + j])
+            train[1] = train[1].reshape(-1, input_layer)
 
-    print('done')
+    for i in range(len(train[0])):
+        print('p50: ', train[0][i][0], 'p90: ', train[1][i][0])
+
+
 
 if __name__ == '__main__':
     test_offlane()

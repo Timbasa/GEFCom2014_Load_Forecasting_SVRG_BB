@@ -1,7 +1,7 @@
 from torch.utils.data import Dataset
 
 class Loader(Dataset):
-    def __init__(self,features, targets):
+    def __init__(self, features, targets):
         self.features = features
         self.targets = targets
 
@@ -12,7 +12,7 @@ class Loader(Dataset):
         features = self.features[item]
         targets = self.targets[item]
 
-        return features,targets
+        return features, targets
 
     def __len__(self):
         return self.len_features
