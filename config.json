@@ -1,0 +1,9 @@
+{
+  "data": {
+    "filename": "./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 1/L1-train.csv",
+    "train_test_split": 0.7,
+    "columns": [
+      "LOAD"
+    ]
+  }
+}

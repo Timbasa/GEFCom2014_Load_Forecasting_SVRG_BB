@@ -1,82 +1,104 @@
 from __future__ import print_function
+
+import os
+import json
+from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
-from loader import Loader
-import torch.nn.functional as F
+from Data_Solver.reshape_data import reshape_data
+from Data_Solver.to_supervised import to_surpervised
+from Data_Solver.quantile_loss import QuantileLoss
+from Data_Solver.data_loader import DataLoader
+from Model.lstm import LSTM
 import matplotlib.pyplot as plt
-from reshape_data import reshape_data
-from to_supervised import to_surpervised
-from quantile_loss import QuantileLossFunction
-from model import RNN
-from test_offlane import test_offlane
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 PATH = 'rnnmodel.pt'
-
 quantiles = [0.5, 0.9]
-input_layer = 20
-hidden_layer = input_layer * 4
-number_layer = 48
+input_size = 20
+hidden_size = 100
+number_layer = 1
+batch_size = 32
+epoch = 50
+input_layer = 48
 output_layer = len(quantiles)
+output_size = 24
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+train_loss = []
+validation_loss = []
+loss_function = QuantileLoss(quantiles)
+# task1_train_start = 35064
+task1_train_start = 76680
 
-
-def train(model, train_loader, test_loader, optimizer, epoch):
-    loss_func = QuantileLossFunction(quantiles).to(device)
-    for e in range(1, epoch+1):
-        for batch_idx, (data, target) in enumerate(train_loader):
-            data, target = data.to(device), target.to(device)
-            optimizer.zero_grad()
-            output = model(data)
-            output = output.view(output.shape[0], -1, 2)
-            # print(output[0])
-            # print(target[0])
-            # print(output[1])
-            # output = output.reshape(output.shape[0], 2, 24)
-            output = output.to(device)
-            loss = loss_func(output, target)
-            loss.backward()
-            optimizer.step()
-            if batch_idx % 10 == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    e, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.item()))
-
-        #validation
-        sum_loss = []
-        for batch_idx, (data, target) in enumerate(test_loader):
-            data, target = data.to(device), target.to(device)
-            output = model(data)
-            output = output.view(output.shape[0], -1, 2)
-            print('Q50: ', output[0, :, 0])
-            print('Q90: ', output[0, :, 1])
-            print(target[0])
-            loss = loss_func(output, target)
-            sum_loss.append(loss.item())
-        print('Train Epoch: {} , the test Loss is {:.6f}'.format(e, np.mean(sum_loss)))
+def plot_results(prediction_list, true_data):
+    fig = plt.figure(facecolor='white')
+    ax = fig.add_subplot(111)
+    ax.plot(true_data, label='True Data')
+    for i in range(len(prediction_list)):
+        plt.plot(prediction_list[i], label='Prediction')
+    plt.legend()
+    plt.show()
 
 
 def pre_train():
     print("reading file")
-    task1_train = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 1/L1-train.csv', header=None, low_memory=False)
-    #the times that have load value start from 35066 to end
-    reshapeData = reshape_data(task1_train.values[35065:], 0)
-    x_train, y_train = to_surpervised(reshapeData[-8760:-6576])
-    x_test, y_test = to_surpervised(reshapeData[-6576:])
-    train_loader = torch.utils.data.DataLoader(Loader(x_train, y_train), batch_size=64, shuffle=True, pin_memory=True)
-    test_loader = torch.utils.data.DataLoader(Loader(x_test, y_test), batch_size=64, shuffle=True, pin_memory=True)
-    rnnmodel = RNN(input_layer, hidden_layer, number_layer, output_layer).to(device)
+    configs = json.load(open('config.json', 'r'))
+    # task1_train = pd.read_csv('./GEFCom2014 Data/GEFCom2014-L_V2/Load/Task 1/L1-train.csv', header=None, low_memory=False)
+    data = DataLoader(
+        os.path.join(configs['data']['filename']),
+        configs['data']['train_test_split'],
+        configs['data']['columns'],
+        task1_train_start
+    )
+    scaler = MinMaxScaler()
+    scaler.fit(data.data_train)
+    train_data = reshape_data(scaler.transform(data.data_train), 0)
+    x, y = to_surpervised(train_data, input_layer, output_size, 'train')
+    x = torch.tensor(x, dtype=torch.float32).to(device)
+    y = torch.tensor(y, dtype=torch.float32).to(device)
+    validation_data = reshape_data(scaler.transform(data.data_test), 1)
+    x_validation, y_validation = to_surpervised(validation_data, input_layer, output_size, 'validation')
+    x_validation = torch.tensor(x_validation, dtype=torch.float32).to(device)
+    y_validation = torch.tensor(y_validation, dtype=torch.float32).to(device)
+    y_validation = y_validation.view(-1, 1)
+    # test = task1_train.values[35065:]
+    # scaler.fit(np.reshape(reshapeddata[:, 0], (-1, 1)))
+    # reshapeddata = reshape_data(task1_train.values[35065:], 0)
+    # origin_data = reshapeddata
+    # scaler_data = scaler.transform()
+    # x_train, y_train = to_surpervised(reshapeddata[-8760:-2190], input_layer, output_size, 'train')
+    # x_validation, y_validation = to_surpervised(reshapeddata[-2190:], input_layer, output_size, 'validation')
+    # x_train = torch.tensor(x_train, dtype=torch.float32).to(device)
+    # y_train = torch.tensor(y_train, dtype=torch.float32).to(device)
+    # x_validation = torch.tensor(x_validation, dtype=torch.float32).to(device)
+    # y_validation = torch.tensor(y_validation, dtype=torch.float32).to(device)
+    # y_validation = y_validation.view(-1, 1)
+    model = LSTM(input_size, hidden_size, number_layer, output_size, output_layer).to(device)
+    optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.2)
 
-    optimizer = optim.SGD(rnnmodel.parameters(), lr=0.3, momentum=0.2)
+    model.train(device, (x, y), (x_validation, y_validation), loss_function, optimizer, batch_size, epoch, train_loss, validation_loss)
 
-    train(rnnmodel, train_loader, test_loader, optimizer, epoch=200)
 
-    torch.save(rnnmodel.state_dict(), PATH)
+    plt.plot(train_loss)
+    plt.plot(validation_loss)
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.legend(['train', 'validation'], loc='upper left')
+    plt.show()
+    # torch.save(model.state_dict(), PATH)
 
-    test_offlane(device, input_layer, hidden_layer, number_layer, output_layer)
+    # test_offlane(device, input_layer, hidden_layer, number_layer, output_layer)
+    predictions = model.off_predict(x_validation)
+
+    # plot_results_multiple(predictions, y_test, configs['data']['sequence_length'])
+    prediction_list = []
+    for i in range(output_layer):
+        prediction_list.append(scaler.inverse_transform(predictions[:, :, i].cpu().detach().numpy()))
+    # predictions = scaler.inverse_transform(predictions.cpu().detach().numpy())
+    y_validation = scaler.inverse_transform(y_validation.cpu().detach().numpy())
+    plot_results(prediction_list, y_validation)
 
 
 if __name__ == '__main__':

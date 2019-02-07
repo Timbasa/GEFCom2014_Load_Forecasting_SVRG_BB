@@ -1,8 +1,8 @@
 import torch
 import pandas as pd
 import numpy as np
-from reshape_data import reshape_data
-from model import RNN
+from Data_Solver.reshape_data import reshape_data
+from Model.lstm import LSTM
 
 
 PATH = 'rnnmodel.pt'
