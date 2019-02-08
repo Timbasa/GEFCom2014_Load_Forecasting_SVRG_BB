@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 
 def reshape_data(data, flag):
-    basedates = [datetime(2009, 10, 1, 1, 00), datetime(2010, 6, 13, 13, 00), datetime(2010, 10, 1, 1, 00), datetime(2010, 11, 1, 1, 00),
+    basedates = [datetime(2005, 1, 1, 1, 00), datetime(2009, 1, 9, 8, 00), datetime(2010, 10, 1, 1, 00), datetime(2010, 11, 1, 1, 00),
                  datetime(2010, 12, 1, 1, 00), datetime(2011, 1, 1, 1, 00), datetime(2011, 2, 1, 1, 00),
                  datetime(2011, 3, 1, 1, 00), datetime(2011, 4, 1, 1, 00), datetime(2011, 5, 1, 1, 00),
                  datetime(2011, 6, 1, 1, 00), datetime(2011, 7, 1, 1, 00), datetime(2011, 8, 1, 1, 00),

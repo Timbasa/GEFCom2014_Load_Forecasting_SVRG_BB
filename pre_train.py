@@ -28,9 +28,8 @@ output_size = 24
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 train_loss = []
 validation_loss = []
-loss_function = QuantileLoss(quantiles)
-# task1_train_start = 35064
-task1_train_start = 76680
+task1_train_start = 35064
+# task1_train_start = 76680
 
 def plot_results(prediction_list, true_data):
     fig = plt.figure(facecolor='white')
@@ -54,6 +53,7 @@ def pre_train():
     )
     scaler = MinMaxScaler()
     scaler.fit(data.data_train)
+    loss_function = QuantileLoss(quantiles)
     train_data = reshape_data(scaler.transform(data.data_train), 0)
     x, y = to_surpervised(train_data, input_layer, output_size, 'train')
     x = torch.tensor(x, dtype=torch.float32).to(device)
@@ -77,10 +77,8 @@ def pre_train():
     # y_validation = y_validation.view(-1, 1)
     model = LSTM(input_size, hidden_size, number_layer, output_size, output_layer).to(device)
     optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.2)
-
-    model.train(device, (x, y), (x_validation, y_validation), loss_function, optimizer, batch_size, epoch, train_loss, validation_loss)
-
-
+    model.train(device, (x, y), (x_validation, y_validation), loss_function, optimizer, batch_size, epoch, train_loss,
+                validation_loss, scaler)
     plt.plot(train_loss)
     plt.plot(validation_loss)
     plt.xlabel('epoch')
@@ -88,18 +86,16 @@ def pre_train():
     plt.legend(['train', 'validation'], loc='upper left')
     plt.show()
     # torch.save(model.state_dict(), PATH)
-
     # test_offlane(device, input_layer, hidden_layer, number_layer, output_layer)
     predictions = model.off_predict(x_validation)
-
     # plot_results_multiple(predictions, y_test, configs['data']['sequence_length'])
     prediction_list = []
     for i in range(output_layer):
         prediction_list.append(scaler.inverse_transform(predictions[:, :, i].cpu().detach().numpy()))
-    # predictions = scaler.inverse_transform(predictions.cpu().detach().numpy())
-    y_validation = scaler.inverse_transform(y_validation.cpu().detach().numpy())
-    plot_results(prediction_list, y_validation)
-
+    prediction_inv = scaler.inverse_transform(predictions.view(-1, 1).cpu().detach().numpy())
+    y_validation_inv = scaler.inverse_transform(y_validation.cpu().detach().numpy())
+    plot_results(prediction_list, y_validation_inv)
+    print("quantile loss: {}".format(loss_function(torch.tensor(prediction_inv).view(-1, 1, output_layer), torch.tensor(y_validation_inv))))
 
 if __name__ == '__main__':
     pre_train()

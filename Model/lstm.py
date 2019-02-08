@@ -23,7 +23,8 @@ class LSTM(nn.Module):
         out = out.view(out.size(0), self.output_size, self.output_layer)
         return out
 
-    def train(self, device, train_data, validation, loss_function, optimizer, batch_size, epoch, train_loss, validation_loss):
+    def train(self, device, train_data, validation, loss_function, optimizer, batch_size, epoch, train_loss,
+              validation_loss, scaler):
         (x, y) = train_data
         (x_v, y_v) = validation
         for e in range(1, epoch + 1):
@@ -37,21 +38,36 @@ class LSTM(nn.Module):
                     output = self.forward(x[batch_idx * batch_size:(batch_idx + 1) * batch_size])
                     target = y[batch_idx * batch_size:(batch_idx + 1) * batch_size]
                 loss = loss_function(output, target)
-                losses.append(loss.item())
+                # losses.append(loss.item())
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+
+                # get origin QL
+                target_inv = scaler.inverse_transform(target.cpu().detach().numpy())
+                output_inv = scaler.inverse_transform(output.view(-1, 1).cpu().detach().numpy())
+                loss_inv = loss_function(torch.tensor(output_inv).view(-1, self.output_size, self.output_layer), torch.tensor(target_inv))
+                losses.append(loss_inv)
+
                 if batch_idx % 10 == 0:
                     print('Epoch:{} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(e,
                                                                             batch_idx * batch_size, x.size(0),
-                                                                            100. * batch_idx / len_batch, loss.item()))
+                                                                            100. * batch_idx / len_batch,
+                                                                            loss_inv.item()))
             train_loss.append(np.mean(losses))
             losses.clear()
             pred = self.off_predict(x_v)
-            los = loss_function(pred, y_v)
-            validation_loss.append(los)
-            print('Epoch:{} train loss:{}, validation loss:{}'.format(e, train_loss[e - 1], validation_loss[e - 1]))
+            # los = loss_function(pred, y_v)
 
+            #get origin QL
+            y_v_inv = scaler.inverse_transform(y_v.cpu().detach().numpy())
+            pred_inv = scaler.inverse_transform(pred.view(-1, 1).cpu().detach().numpy())
+            # print("quantile loss: {}".format(
+            #     loss_function(torch.tensor(pred).view(-1, 1, self.output_layer), torch.tensor(y_v_inv))))
+
+            # validation_loss.append(los)
+            validation_loss.append(loss_function(torch.tensor(pred_inv).view(-1, 1, self.output_layer), torch.tensor(y_v_inv)))
+            print('Epoch:{} train loss:{}, validation loss:{}'.format(e, train_loss[e - 1], validation_loss[e - 1]))
 
     # pytorch lstm validate the result
     def off_predict(self, x):
